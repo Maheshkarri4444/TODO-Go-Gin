@@ -54,9 +54,9 @@ func SignUp(c *gin.Context) {
 	}
 
 	user.ID = primitive.NewObjectID()
-	resultInsertionNumber, insertErr := userCollection.InsertOne(ctx, user)
+	_, insertErr := userCollection.InsertOne(ctx, user)
 	if insertErr != nil {
-		msg := fmt.Sprintf("user item was not created")
+		msg := fmt.Sprintf("user item was not %s", "created")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": msg})
 		return
 	}
@@ -72,23 +72,158 @@ func SignUp(c *gin.Context) {
 	}
 
 	http.SetCookie(c.Writer, &http.Cookie{
-		Name:    "token",
-		Value:   token,
-		Expires: expirationTime,
+		Name:     "token",
+		Value:    token,
+		Expires:  expirationTime,
+		Path:     "/",
+		Domain:   "", // Leave empty to default to current domain
+		HttpOnly: true,
+		Secure:   true, // Must be true when using SameSite=None
+		SameSite: http.SameSiteNoneMode,
 	})
 
 	http.SetCookie(c.Writer, &http.Cookie{
-		Name:    "userID",
-		Value:   userId,
-		Expires: expirationTime,
+		Name:     "userID",
+		Value:    userId,
+		Expires:  expirationTime,
+		Path:     "/",
+		Domain:   "", // Leave empty to default to current domain
+		HttpOnly: true,
+		Secure:   true, // Must be true when using SameSite=None
+		SameSite: http.SameSiteNoneMode,
 	})
 
 	http.SetCookie(c.Writer, &http.Cookie{
-		Name:    "username",
-		Value:   username,
-		Expires: expirationTime,
+		Name:     "username",
+		Value:    username,
+		Expires:  expirationTime,
+		Path:     "/",
+		Domain:   "", // Leave empty to default to current domain
+		HttpOnly: true,
+		Secure:   true, // Must be true when using SameSite=None
+		SameSite: http.SameSiteNoneMode,
 	})
 
-	c.JSON(http.StatusOK, resultInsertionNumber)
+	// c.JSON(http.StatusOK, resultInsertionNumber)
+	c.JSON(http.StatusOK, gin.H{
+		"message": "User registered successfully",
+		"user_id": userId,
+	})
+
+}
+
+func Login(c *gin.Context) {
+
+	var user models.User
+	if err := c.BindJSON(&user); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	var ctx, cancel = context.WithTimeout(context.Background(), 100*time.Second)
+	defer cancel()
+
+	var foundUser models.User
+	err := userCollection.FindOne(ctx, bson.M{"email": user.Email}).Decode(&foundUser)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "email is not valid"})
+		return
+	}
+
+	passwordIsValid, msg := VerifyPassword(*user.Password, *foundUser.Password)
+
+	if !passwordIsValid {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": msg})
+		return
+	}
+
+	if foundUser.Email == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "user not found"})
+		return
+	}
+
+	userId := foundUser.ID.Hex()
+	username := *foundUser.Name
+
+	shouldRefresh, err, expirationTime := auth.RefreshToken(c)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "refresh token error"})
+		return
+	}
+
+	if shouldRefresh {
+		token, err, expirationTime := auth.GenerateJWT(userId)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "error occured while generating token"})
+			return
+		}
+		http.SetCookie(c.Writer, &http.Cookie{
+			Name:     "token",
+			Value:    token,
+			Expires:  expirationTime,
+			Path:     "/",
+			Domain:   "", // Leave empty to default to current domain
+			HttpOnly: true,
+			Secure:   true, // Must be true when using SameSite=None
+			SameSite: http.SameSiteNoneMode,
+		})
+
+		http.SetCookie(c.Writer, &http.Cookie{
+			Name:     "userID",
+			Value:    userId,
+			Expires:  expirationTime,
+			Path:     "/",
+			Domain:   "", // Leave empty to default to current domain
+			HttpOnly: true,
+			Secure:   true, // Must be true when using SameSite=None
+			SameSite: http.SameSiteNoneMode,
+		})
+
+		http.SetCookie(c.Writer, &http.Cookie{
+			Name:     "username",
+			Value:    username,
+			Expires:  expirationTime,
+			Path:     "/",
+			Domain:   "", // Leave empty to default to current domain
+			HttpOnly: true,
+			Secure:   true, // Must be true when using SameSite=None
+			SameSite: http.SameSiteNoneMode,
+		})
+	} else {
+		http.SetCookie(c.Writer, &http.Cookie{
+			Name:     "userID",
+			Value:    userId,
+			Expires:  expirationTime,
+			Path:     "/",
+			Domain:   "", // Leave empty to default to current domain
+			HttpOnly: true,
+			Secure:   true, // Must be true when using SameSite=None
+			SameSite: http.SameSiteNoneMode,
+		})
+
+		http.SetCookie(c.Writer, &http.Cookie{
+			Name:     "username",
+			Value:    username,
+			Expires:  expirationTime,
+			Path:     "/",
+			Domain:   "", // Leave empty to default to current domain
+			HttpOnly: true,
+			Secure:   true, // Must be true when using SameSite=None
+			SameSite: http.SameSiteNoneMode,
+		})
+	}
+	c.JSON(http.StatusOK, gin.H{"msg": "login successfull"})
+
+}
+
+func VerifyPassword(userPassword string, providedPassword string) (bool, string) {
+	err := bcrypt.CompareHashAndPassword([]byte(providedPassword), []byte(userPassword))
+	check := true
+	msg := ""
+	if err != nil {
+		msg = fmt.Sprintf("password is %s", "incorrect")
+		check = false
+	}
+	return check, msg
 
 }

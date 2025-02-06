@@ -20,6 +20,7 @@ func CreateMongoClient() *mongo.Client {
 		log.Fatal("error loading the file!")
 	}
 	MongoDbURI := os.Getenv("MONGODB_URI")
+	// fmt.Println("mongo uri: ", MongoDbURI)
 	if MongoDbURI == "" {
 		log.Fatal("MONGODB_URI not found in environment variables")
 	}
