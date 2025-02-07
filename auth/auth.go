@@ -88,7 +88,7 @@ func RefreshToken(c *gin.Context) (bool, error, time.Time) {
 		}
 		return false, err, time.Time{}
 	}
-	if !tkn.Valid || time.Unix(claims.ExpiresAt, 0).Sub(time.Now()) > 30*time.Second {
+	if !tkn.Valid || time.Unix(claims.ExpiresAt, 0).Sub(time.Now()) < 30*time.Second {
 		return true, nil, time.Unix(claims.ExpiresAt, 0)
 	}
 	return false, nil, time.Unix(claims.ExpiresAt, 0)
